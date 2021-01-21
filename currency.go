@@ -1,5 +1,7 @@
 package currency
 
+import "strings"
+
 type Currency struct {
 	Alpha3  string
 	Numeric string
@@ -8,16 +10,17 @@ type Currency struct {
 	//Country string
 	//BankURL string
 
-	Name string
-	//ShortName string
+	Name     string
+	AltNames []string
+	Tags     []string
 	Accuracy int
 
 	Users []string
 }
 
-func ByAlpha3(v string) *Currency {
+func Get(v string) *Currency {
 	for _, c := range List {
-		if c.Alpha3 == v {
+		if c.Alpha3 == v || c.Numeric == v {
 			return &c
 		}
 	}
@@ -25,10 +28,24 @@ func ByAlpha3(v string) *Currency {
 	return nil
 }
 
-func ByNumeric(v string) *Currency {
+func ByName(v string) *Currency {
+	v = strings.ToLower(v)
+
 	for _, c := range List {
-		if c.Numeric == v {
+		if strings.ToLower(c.Name) == v {
 			return &c
+		}
+
+		for _, n := range c.AltNames {
+			if strings.ToLower(n) == v {
+				return &c
+			}
+		}
+
+		for _, n := range c.Tags {
+			if strings.ToLower(n) == v {
+				return &c
+			}
 		}
 	}
 

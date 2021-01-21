@@ -5,6 +5,8 @@ import (
 	"github.com/zofan/go-country"
 	"github.com/zofan/go-fwrite"
 	"github.com/zofan/go-req"
+	"github.com/zofan/go-xmlre"
+	"golang.org/x/net/html"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -20,11 +22,11 @@ func Update() error {
 	)
 
 	var (
-		ccyBlockRe   = regexp.MustCompile(`(?s)<CcyNtry[^>]*>(.*?)</CcyNtry>`)
-		ccyNmRe      = regexp.MustCompile(`(?s)<CcyNm[^>]*>([^<]+)</`)
-		ccyRe        = regexp.MustCompile(`(?s)<Ccy>([^<]+)</`)
-		ccyNbrRe     = regexp.MustCompile(`(?s)<CcyNbr[^>]*>([^<]+)</`)
-		ccyMnrUntsRe = regexp.MustCompile(`(?s)<CcyMnrUnts[^>]*>([^<]+)</`)
+		ccyBlockRe   = xmlre.Compile(`<CcyNtry>(.*?)</CcyNtry>`)
+		ccyNmRe      = xmlre.Compile(`<CcyNm>([^<]+)</`)
+		ccyRe        = xmlre.Compile(`<Ccy>([^<]+)</`)
+		ccyNbrRe     = xmlre.Compile(`<CcyNbr>([^<]+)</`)
+		ccyMnrUntsRe = xmlre.Compile(`<CcyMnrUnts>([^<]+)</`)
 	)
 
 	resp := httpClient.Get(`https://www.currency-iso.org/dam/downloads/lists/list_one.xml`)
@@ -64,9 +66,9 @@ func Update() error {
 	}
 
 	body = string(resp.ReadAll())
-	body = strings.ReplaceAll(body, `&nbsp;`, ` `)
+	body = html.UnescapeString(body)
 
-	symbolsRe := regexp.MustCompile(`(?s)<td class="column-4">(\w+)</td><td class="column-5">([^<]+)</td>`)
+	symbolsRe := xmlre.Compile(`<td class="column-4">(\w+)</td><td class="column-5">([^<]+)</td>`)
 
 	for _, s := range symbolsRe.FindAllStringSubmatch(body, -1) {
 		if c, ok := list[s[1]]; ok {
@@ -86,6 +88,8 @@ func Update() error {
 
 	// ---
 
+	updateTags(list)
+
 	var tpl []string
 
 	tpl = append(tpl, `package currency`)
@@ -104,6 +108,8 @@ func Update() error {
 		//tpl = append(tpl, `		BankURL:   "`+c.BankURL+`",`)
 		tpl = append(tpl, `		Accuracy:  `+strconv.Itoa(c.Accuracy)+`,`)
 		tpl = append(tpl, `		Users:     `+fmt.Sprintf(`%#v`, c.Users)+`,`)
+		tpl = append(tpl, `		AltNames:  `+fmt.Sprintf(`%#v`, c.AltNames)+`,`)
+		tpl = append(tpl, `		Tags:      `+fmt.Sprintf(`%#v`, c.Tags)+`,`)
 		tpl = append(tpl, `	},`)
 	}
 
@@ -114,4 +120,26 @@ func Update() error {
 	dir := filepath.Dir(file)
 
 	return fwrite.WriteRaw(dir+`/currency_db.go`, []byte(strings.Join(tpl, "\n")))
+}
+
+func updateTags(list map[string]*Currency) {
+	wordSplitRe := regexp.MustCompile(`[^\p{L}\p{N}]+`)
+	wordMap := map[string][]*Currency{}
+
+	for _, c := range list {
+		name := strings.ToLower(c.Name + ` ` + strings.Join(c.AltNames, ` `))
+		words := wordSplitRe.Split(name, -1)
+		for _, w := range words {
+			if len(w) > 0 {
+				wordMap[w] = append(wordMap[w], c)
+			}
+		}
+		c.Tags = []string{}
+	}
+
+	for w, cs := range wordMap {
+		if len(cs) == 1 {
+			cs[0].Tags = append(cs[0].Tags, w)
+		}
+	}
 }
